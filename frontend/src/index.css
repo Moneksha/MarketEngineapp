@@ -1,0 +1,102 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #090C15;
+  --color-surface: #131826;
+  --color-primary: #05E07D;
+  --color-danger: #FF334B;
+  --color-warning: #FFB020;
+  --color-text: #F3F4F6;
+  --color-muted: #8B95A5;
+  --color-border: rgba(255, 255, 255, 0.1);
+
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-marquee: marquee 30s linear infinite;
+  --animate-glow: glow 2s ease-in-out infinite alternate;
+
+  @keyframes marquee {
+    0% {
+      transform: translateX(0%);
+    }
+
+    100% {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes glow {
+    0% {
+      box-shadow: 0 0 5px rgba(5, 224, 125, 0.2);
+    }
+
+    100% {
+      box-shadow: 0 0 20px rgba(5, 224, 125, 0.6);
+    }
+  }
+}
+
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Soft pattern or noise can be added here if desired for depth */
+  }
+}
+
+/* Custom scrollbar - Dark Mode Elegant */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-muted);
+}
+
+/* Premium Glass & Surface Utility classes */
+@layer utilities {
+  .glass-panel {
+    background: rgba(19, 24, 38, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+  }
+
+  .glass-panel:hover {
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  /* Specifically for active/live Strategy cards */
+  .strategy-live {
+    border: 1px solid rgba(5, 224, 125, 0.3);
+    box-shadow: 0 0 15px rgba(5, 224, 125, 0.05);
+  }
+
+  /* Scroll hiding utility for the ticker */
+  .hide-scroll {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+  }
+
+  .hide-scroll::-webkit-scrollbar {
+    display: none;
+    /* Chrome, Safari and Opera */
+  }
+}
