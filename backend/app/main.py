@@ -20,6 +20,7 @@ from app.api.market import router as market_router
 from app.api.strategies import router as strategy_router
 from app.api.trades import trades_router, pnl_router
 from app.api.sentiment import router as sentiment_router
+from app.api.backtest_router import router as backtest_router
 from app.websocket.market_ws import websocket_endpoint, broadcast_task
 from app.services.strategy_runner import run_strategy_cycle
 from app.services.kite_service import kite_service
@@ -87,8 +88,125 @@ async def lifespan(app: FastAPI):
         id="strategy_runner",
         replace_existing=True,
     )
+
+    # Refresh chart candles (5min/3min/15min/30min) every 5 minutes during market hours
+    async def _refresh_chart_candles():
+        """Pull today's candles from Kite historical and upsert into CandleStore."""
+        try:
+            if not kite_service.is_authenticated():
+                return
+            chart_intervals = [
+                ("3minute",  "3minute"),
+                ("5minute",  "5minute"),
+                ("15minute", "15minute"),
+                ("30minute", "30minute"),
+            ]
+            for tf, kite_interval in chart_intervals:
+                try:
+                    candles = await kite_service.get_nifty_candles(interval=kite_interval, days=1)
+                    if candles:
+                        candle_store.upsert_candles(tf, candles)
+                except Exception as e:
+                    logger.warning(f"Chart candle refresh failed for {tf}: {e}")
+        except Exception as e:
+            logger.warning(f"Chart candle refresh error: {e}")
+
+    scheduler.add_job(
+        _refresh_chart_candles,
+        "cron",
+        day_of_week="mon-fri",
+        hour="9-15",
+        minute="*/5",
+        id="chart_candle_refresh",
+        replace_existing=True,
+    )
+
+    # ── Persist NIFTY 1-min candles to PostgreSQL every minute ─────────────────
+    async def _persist_nifty_candles():
+        """
+        Fetch today's completed 1-min NIFTY candles from Kite and upsert into DB.
+        Uses ON CONFLICT DO UPDATE so re-running is always idempotent.
+        Each calendar day accumulates ~375 rows (9:15 AM – 3:29 PM).
+        """
+        try:
+            if not kite_service.is_authenticated():
+                return
+
+            import pytz
+            from datetime import datetime as _dt
+            from sqlalchemy.dialects.postgresql import insert as pg_insert
+            from app.database.models import NiftyCandle
+            from app.database.base import AsyncSessionLocal
+
+            ist = pytz.timezone("Asia/Kolkata")
+            now_ist = _dt.now(ist)
+            today_open = ist.localize(_dt(now_ist.year, now_ist.month, now_ist.day, 9, 0, 0))
+
+            candles = await kite_service.get_historical(
+                256265, today_open, now_ist, "minute"
+            )
+            if not candles:
+                return
+
+            # Build list of dicts for bulk upsert; skip the live forming candle (last one)
+            rows = []
+            for c in candles[:-1]:   # [:-1] = only completed candles
+                d = c.get("date")
+                if isinstance(d, str):
+                    from datetime import datetime as _parse
+                    try:
+                        d = _parse.fromisoformat(d)
+                    except Exception:
+                        continue
+                # Ensure timezone-aware
+                if d.tzinfo is None:
+                    d = pytz.utc.localize(d)
+                rows.append({
+                    "symbol":    "NIFTY 50",
+                    "interval":  "1minute",
+                    "timestamp": d,
+                    "open":      float(c.get("open", 0)),
+                    "high":      float(c.get("high", 0)),
+                    "low":       float(c.get("low", 0)),
+                    "close":     float(c.get("close", 0)),
+                    "volume":    int(c.get("volume", 0)),
+                })
+
+            if not rows:
+                return
+
+            async with AsyncSessionLocal() as db:
+                stmt = pg_insert(NiftyCandle).values(rows)
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=["symbol", "interval", "timestamp"],
+                    set_={
+                        "open":   stmt.excluded.open,
+                        "high":   stmt.excluded.high,
+                        "low":    stmt.excluded.low,
+                        "close":  stmt.excluded.close,
+                        "volume": stmt.excluded.volume,
+                    }
+                )
+                await db.execute(stmt)
+                await db.commit()
+            logger.debug(f"[CandleDB] Upserted {len(rows)} 1-min candles to DB")
+
+        except Exception as e:
+            logger.warning(f"[CandleDB] Persist job failed: {e}")
+
+    scheduler.add_job(
+        _persist_nifty_candles,
+        "cron",
+        day_of_week="mon-fri",
+        hour="9-15",
+        minute="*/1",
+        id="candle_db_persist",
+        replace_existing=True,
+    )
+
     scheduler.start()
-    logger.info("⏰ APScheduler started (strategy runner: every 1 min, market hours)")
+    logger.info("⏰ APScheduler started (strategy runner: every 1 min, candle DB persist: every 1 min, candle refresh: every 5 min)")
+
 
     # Start WebSocket broadcast task
     asyncio.create_task(broadcast_task())
@@ -102,17 +220,27 @@ async def lifespan(app: FastAPI):
     async def _seed_candle_store():
         try:
             from app.services.kite_service import kite_service as _ks
-            from app.strategies.registry import TIMEFRAME_MAP
             if not _ks.is_authenticated():
                 return
-            for tf, kite_interval in [("1minute", "minute"), ("15minute", "15minute")]:
-                candles = await _ks.get_nifty_candles(interval=kite_interval, days=2)
-                if candles:
-                    count = candle_store.upsert_candles(tf, candles)
-                    candle_store.mark_initialized(tf)
-                    logger.info(f"📦 CandleStore seeded: {tf} with {count} candles")
+            # Seed all intervals used by the chart (key=store key, value=Kite API interval)
+            intervals_to_seed = [
+                ("1minute",  "minute"),
+                ("3minute",  "3minute"),
+                ("5minute",  "5minute"),
+                ("15minute", "15minute"),
+                ("30minute", "30minute"),
+            ]
+            for tf, kite_interval in intervals_to_seed:
+                try:
+                    candles = await _ks.get_nifty_candles(interval=kite_interval, days=2)
+                    if candles:
+                        count = candle_store.upsert_candles(tf, candles)
+                        candle_store.mark_initialized(tf)
+                        logger.info(f"📦 CandleStore seeded: {tf} with {count} candles")
+                except Exception as e:
+                    logger.warning(f"CandleStore seed failed for {tf}: {e}")
         except Exception as e:
-            logger.warning(f"CandleStore seed failed (will retry on first runner cycle): {e}")
+            logger.warning(f"CandleStore seed failed: {e}")
 
     asyncio.create_task(_seed_candle_store())
 
@@ -145,6 +273,7 @@ app.include_router(strategy_router)
 app.include_router(trades_router)
 app.include_router(pnl_router)
 app.include_router(sentiment_router)
+app.include_router(backtest_router)
 
 
 # WebSocket endpoint

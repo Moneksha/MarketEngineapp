@@ -98,3 +98,77 @@ def compute_drawdown(equity_curve: pd.Series) -> float:
     roll_max = equity_curve.cummax()
     drawdown = (equity_curve - roll_max) / roll_max.replace(0, np.nan)
     return float(drawdown.min() * 100) if len(drawdown) > 0 else 0.0
+
+
+def resample_candles(df: pd.DataFrame, interval: str) -> pd.DataFrame:
+    """
+    Resample 1-minute OHLCV dataframe to a target interval (e.g., '3min', '5min', '15min', '30min').
+    """
+    if df.empty:
+        return df
+
+    # Map our interval strings to pandas offset aliases
+    interval_map = {
+        "3minute": "3min",
+        "5minute": "5min",
+        "15minute": "15min",
+        "30minute": "30min",
+        "minute": "1min",
+        "1minute": "1min"
+    }
+
+    pd_interval = interval_map.get(interval)
+    if not pd_interval or pd_interval == "1min":
+        return df.copy()
+
+    # Ensure date is the index for timezone-aware resampling
+    working_df = df.copy()
+    if "date" in working_df.columns:
+        working_df.set_index("date", inplace=True)
+
+    # Resample rules for OHLCV
+    resampled = working_df.resample(pd_interval).agg({
+        "open": "first",
+        "high": "max",
+        "low": "min",
+        "close": "last",
+        "volume": "sum"
+    })
+
+    # Drop NA rows which represent periods with no trading
+    resampled.dropna(subset=["open", "high", "low", "close"], inplace=True)
+    resampled.reset_index(inplace=True)
+    
+    return resampled
+
+
+def prepare_chart_data(candles: list, target_interval: str, return_length: Optional[int] = None) -> list:
+    """
+    Takes 1-minute raw candles, resamples to target interval, computes full-set indicators (EMA 9, EMA 21),
+    and finally returns a subset list of dicts suitable for charting.
+    """
+    if not candles:
+        return []
+
+    # 1. Convert to DataFrame
+    df = candles_to_dataframe(candles)
+
+    # 2. Resample logic
+    df_resampled = resample_candles(df, target_interval)
+    if df_resampled.empty:
+        return []
+
+    # 3. Indicator logic (EMA 9, EMA 21) across the full continuous range
+    df_resampled["ema_9"] = ema(df_resampled["close"], 9)
+    df_resampled["ema_21"] = ema(df_resampled["close"], 21)
+
+    # 4. Slice to return_length if provided (e.g. today's candles only)
+    if return_length is not None and return_length > 0:
+        df_resampled = df_resampled.tail(return_length)
+
+    # Format back to list of dicts with isoformat dates
+    df_resampled["date"] = df_resampled["date"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    
+    # Replace NaN values with None for JSON serialization
+    df_resampled = df_resampled.replace({np.nan: None})
+    return df_resampled.to_dict("records")

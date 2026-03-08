@@ -22,6 +22,7 @@ class BaseStrategy(ABC):
     target_logic: str = ""
     fund_required: float = 100000.0
     lot_size: int = 50
+    is_positional: bool = False  # Flag for multi-day carry-forward
 
     def __init__(self):
         self._running = False
@@ -182,4 +183,5 @@ class BaseStrategy(ABC):
             "fund_required": self.fund_required,
             "lot_size": self.lot_size,
             "is_running": self._running,
+            "is_positional": self.is_positional,
         }

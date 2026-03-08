@@ -146,30 +146,6 @@ async def run_strategy_cycle():
                         opt = q.get(trade_sym, {})
                         trade_price = float(opt.get("last_price", trade.get("entry_price")))
 
-                # ── Custom Straddle Exit (Spot movement) ──────────
-                if pta.has_active_trade(strategy_id) and trade_price is not None:
-                    active_trade = pta.get_active_trade(strategy_id)
-                    sig_data = active_trade.get("signal_data") or {}
-                    inner = sig_data.get("signal_data") or sig_data   # unwrap if nested
-                    
-                    if inner.get("spot_exit_distance"):
-                        entry_spot = float(inner.get("spot_price", 0))
-                        exit_dist  = float(inner.get("spot_exit_distance", 0))
-                        # Compare NIFTY SPOT movement (not option premium vs spot)
-                        spot_move = abs(current_price - entry_spot)
-                        if entry_spot > 0 and spot_move >= exit_dist:
-                            logger.info(
-                                f"[{strategy_id}] Straddle movement exit: NIFTY spot {current_price:.2f} "
-                                f"moved {spot_move:.2f} pts from entry spot {entry_spot:.2f} "
-                                f"(limit = {exit_dist:.2f}, premium={trade_price:.2f})"
-                            )
-                            exit_info = await pta.exit_trade(
-                                db, strategy_id, trade_price, reason="MOVEMENT_EXIT"
-                            )
-                            if exit_info:
-                                strategy.notify_exit("MOVEMENT_EXIT")
-                                await _recalc_spread_pnl(db, exit_info)
-
                 # ── Expiry Day Auto-Square Off (15:25) ──────────
                 if pta.has_active_trade(strategy_id):
                     active_trade = pta.get_active_trade(strategy_id)
@@ -293,13 +269,19 @@ async def run_strategy_cycle():
                 # ── Straddle signal (SELL_STRADDLE): dual-leg resolution ──────────
                 if signal and signal.get("signal") == "SELL_STRADDLE":
                     signal = await _resolve_straddle_legs(signal, strategy, current_price)
-                    if signal and pta.has_active_trade(strategy_id):
-                         # In straddle 2A, new entry implies exiting previous
-                         logger.warning(f"[{strategy_id}] Force closing existing straddle for new re-entry.")
-                         exit_info = await pta.exit_trade(db, strategy_id, current_price, reason="REENTRY_EXIT")
-                         if exit_info:
-                             strategy.notify_exit("REENTRY_EXIT")
-                             await _recalc_spread_pnl(db, exit_info)
+                    # Only force-exit an existing trade on a genuine RE-ENTRY signal,
+                    # not on INITIAL_ENTRY (which can happen after a backend restart
+                    # if strategy state resets but the DB trade is still active).
+                    is_reentry = signal and signal.get("reason") == "REENTRY"
+                    if is_reentry and pta.has_active_trade(strategy_id):
+                        logger.warning(f"[{strategy_id}] Force closing existing straddle for re-entry.")
+                        # ⚠️ Use trade_price (combined premium), NOT current_price (NIFTY spot)
+                        reentry_exit_price = trade_price if trade_price else signal.get("price", current_price)
+                        exit_info = await pta.exit_trade(db, strategy_id, reentry_exit_price, reason="REENTRY_EXIT")
+                        if exit_info:
+                            strategy.notify_exit("REENTRY_EXIT")
+                            await _recalc_spread_pnl(db, exit_info)
+
 
                 # ── Forced reversal exit for spread regime change ─────────────
                 if pta.has_active_trade(strategy_id) and signal:

@@ -80,23 +80,41 @@ async def secure_login_url():
 @router.get("/auth/zerodha/callback")
 async def auth_callback(request_token: str = Query(...), action: Optional[str] = Query(None), status: Optional[str] = Query(None)):
     """
-    Receives the redirect from Zerodha Kite.
+    Receives the redirect from Zerodha Kite (or the Playwright script).
     Exchanges request_token for access_token immediately on the backend.
-    Redirects back to the frontend dashboard.
     """
-    # 'status' is returned by Kite (success/failure)
-    if status == "success" or action == "login":
-        if request_token:
-            try:
-                await kite_service.exchange_token(request_token)
-                logger.info("Secure OAuth callback successfully exchanged token.")
-            except Exception as e:
-                logger.error(f"Secure OAuth callback token exchange failed: {e}")
+    if request_token:
+        try:
+            await kite_service.exchange_token(request_token)
+            logger.info("Secure OAuth callback successfully exchanged token.")
+        except Exception as e:
+            logger.error(f"Secure OAuth callback token exchange failed: {e}")
     
     # Redirect to the frontend dashboard
-    # Remove any sensitive tokens from the URL
     dashboard_url = settings.frontend_url
     return RedirectResponse(url=dashboard_url, status_code=302)
+
+
+@router.post("/auth/zerodha/auto-login")
+async def trigger_auto_login():
+    """
+    Triggers the Playwright auto-login script in the background.
+    The script runs independently, fetches the request token, and sends it 
+    back to the /auth/zerodha/callback endpoint.
+    """
+    import subprocess
+    import os
+    import sys
+    
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "scripts", "kite_auto_login.py")
+    
+    try:
+        # Run in background without blocking the API response
+        subprocess.Popen([sys.executable, script_path])
+        return {"status": "success", "message": "Auto-login process started in the background."}
+    except Exception as e:
+        logger.error(f"Failed to start auto-login script: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/auth/zerodha/status")
@@ -106,11 +124,27 @@ async def secure_auth_status():
         return {"connected": False}
     
     # Actually verify the token works by fetching the profile
-    profile = await kite_service.get_profile()
-    if not profile or "user_id" not in profile:
-        # Token is invalid or expired
-        kite_service.set_access_token("") # Clear it
-        return {"connected": False}
+    try:
+        profile = await kite_service.get_profile()
+        if not profile or "user_id" not in profile:
+            # Empty profile might mean token isn't working or mocked empty
+            if not settings.mock_mode:
+                kite_service.set_access_token("") # Clear it
+                return {"connected": False}
+    except Exception as e:
+        from kiteconnect.exceptions import TokenException
+        if isinstance(e, TokenException):
+            logger.error(f"Token is invalid/expired according to Kite: {e}")
+            kite_service.set_access_token("") # Clear it
+            return {"connected": False}
+        elif "token" in str(e).lower() and "exception" in str(type(e)).lower():
+             logger.error(f"Possible token exception, clearing it: {e}")
+             kite_service.set_access_token("")
+             return {"connected": False}
+        
+        logger.warning(f"Network or non-token error verifying profile: {e}")
+        # Return True so frontend doesn't log the user out
+        return {"connected": True}
         
     return {"connected": True}
 
@@ -175,21 +209,96 @@ async def get_market_bias():
 async def get_ohlc(
     symbol: str,
     interval: str = Query("5minute"),
-    days: int = Query(5),
+    days: int = Query(1),
 ):
     if not kite_service.is_authenticated():
         raise HTTPException(status_code=401, detail="Not authenticated with Zerodha")
     token = INSTRUMENT_TOKENS.get(symbol.upper())
     if not token:
         raise HTTPException(status_code=404, detail=f"Symbol '{symbol}' not found")
+
     from datetime import datetime, timedelta
-    to_dt = datetime.now()
-    from_dt = to_dt - timedelta(days=days)
+    import pytz
+    from sqlalchemy import select
+    from app.database.base import AsyncSessionLocal
+    from app.database.models import NiftyCandle
+    from app.utils.indicators import prepare_chart_data
+
+    ist = pytz.timezone("Asia/Kolkata")
+    now_ist = datetime.now(ist)
+
+    # 1. Determine the exact start range for fetching (Yesterday Open to Now)
+    if now_ist.weekday() == 0:  # Monday
+        yesterday_dt = now_ist - timedelta(days=3) # Last Friday
+    else:
+        yesterday_dt = now_ist - timedelta(days=1)
+        
+    yesterday_open = ist.localize(datetime(yesterday_dt.year, yesterday_dt.month, yesterday_dt.day, 9, 0, 0))
+
+    # 2. Fetch all 1-minute candles from DB in this range
+    async with AsyncSessionLocal() as db:
+        stmt = select(NiftyCandle).filter(
+            NiftyCandle.symbol == symbol.upper(),
+            NiftyCandle.interval == "1minute",
+            NiftyCandle.timestamp >= yesterday_open
+        ).order_by(NiftyCandle.timestamp.asc())
+        
+        result = await db.execute(stmt)
+        db_candles = result.scalars().all()
+
+    # Convert DB models to dict structure expected by prepare_chart_data
+    candles_1m = []
+    for c in db_candles:
+        candles_1m.append({
+            "date": c.timestamp,
+            "open": float(c.open),
+            "high": float(c.high),
+            "low": float(c.low),
+            "close": float(c.close),
+            "volume": int(c.volume)
+        })
+
+    # 3. Fallback: If DB is empty, fetch from Kite and construct same range
+    if not candles_1m:
+        logger.warning(f"[ohlc] No DB candles found for {symbol} since {yesterday_open.date()}. Fetching from Kite.")
+        try:
+            candles_1m = await kite_service.get_historical(token, yesterday_open, now_ist, "minute")
+            # Exclude the live forming candle if we are mid-minute
+            if candles_1m and candles_1m[-1].get("volume", 1) == 0: # Approximation for forming
+                candles_1m = candles_1m[:-1]
+        except Exception as e:
+            logger.error(f"[ohlc] Kite fallback fetch failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to fetch market data")
+
+    if not candles_1m:
+        return {"symbol": symbol, "interval": interval, "candles": []}
+
+    # 4. Predict how many candles make up "Today" for the display slice
+    # Normal day is ~375 1-min candles. In 5min that's 75 candles.
+    # We find how many candles in the 1m set belong to *today* to derive our return limit.
+    today_str = str(now_ist.date())
+    today_1m_count = sum(1 for c in candles_1m if str(c.get("date", "")).startswith(today_str))
+
+    # Calculate target length based on the chosen interval
+    interval_minutes = 1
+    if "minute" in interval.lower():
+        try:
+            interval_minutes = int(interval.replace("minute", ""))
+        except ValueError:
+            interval_minutes = 1 # default to 1 if parsing fails e.g 'minute'
+            
+    # Calculate how many display candles 'today' actually spans in the new timeframe
+    # +1 to ensure partial/latest candle is included
+    target_length = max(1, (today_1m_count // interval_minutes) + 1) if today_1m_count > 0 else 75
+
+    # 5. Resample, compute indicators on FULL dataset, and slice
     try:
-        candles = await kite_service.get_historical(token, from_dt, to_dt, interval)
-        return {"symbol": symbol, "interval": interval, "candles": candles}
+        final_candles = prepare_chart_data(candles_1m, interval, return_length=target_length)
+        logger.info(f"[ohlc] Served {len(final_candles)} contiguous candles for {symbol} ({interval}) derived from {len(candles_1m)} base 1-minute DB candles.")
+        return {"symbol": symbol, "interval": interval, "candles": final_candles}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[ohlc] Processing error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to process market data")
 
 
 

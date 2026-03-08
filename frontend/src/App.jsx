@@ -8,6 +8,8 @@ import StrategySelector from './components/StrategySelector';
 import StrategyDetail from './components/StrategyDetail';
 import TradeTable from './components/TradeTable';
 import AddStrategyModal from './components/AddStrategyModal';
+import WhatsAppWidget from './components/WhatsAppWidget';
+import ResearchDashboard from './pages/ResearchDashboard';
 import { wsService } from './services/websocket';
 import api from './services/api';
 import { tradesApi, marketApi } from './services/api';
@@ -22,6 +24,7 @@ function App() {
   const [selectedStrategy, setSelectedStrategy] = useState(null);
   const [trades, setTrades] = useState([]);
   const [showModal, setShowModal] = useState(false);
+  const [currentView, setCurrentView] = useState('dashboard'); // 'dashboard' | 'research'
 
   // Fetch initial data
   useEffect(() => {
@@ -153,9 +156,41 @@ function App() {
     }
   };
 
+  // If we're in research view, render the full-page dashboard
+  if (currentView === 'research') {
+    return (
+      <div className="min-h-screen bg-background text-text font-sans selection:bg-primary/30">
+        <ResearchDashboard onBack={() => setCurrentView('dashboard')} />
+        <WhatsAppWidget />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background text-text font-sans selection:bg-primary/30">
       <Header isConnected={wsConnected} />
+
+      {/* Research Dashboard Navigation Tab */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-4 flex gap-3">
+        <button
+          onClick={() => setCurrentView('dashboard')}
+          className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${currentView === 'dashboard'
+              ? 'bg-primary text-background shadow-[0_0_12px_rgba(5,224,125,0.3)]'
+              : 'text-muted hover:text-text border border-border'
+            }`}
+        >
+          Live Dashboard
+        </button>
+        <button
+          onClick={() => setCurrentView('research')}
+          className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${currentView === 'research'
+              ? 'bg-primary text-background shadow-[0_0_12px_rgba(5,224,125,0.3)]'
+              : 'text-muted hover:text-text border border-border'
+            }`}
+        >
+          ⚗️ Equity Research
+        </button>
+      </div>
 
       {/* Top 10 NIFTY Ticker always below header */}
       <NiftyTicker heavyweights={heavyweights} />
@@ -238,6 +273,9 @@ function App() {
 
       {/* Add Strategy Modal */}
       {showModal && <AddStrategyModal onClose={() => setShowModal(false)} />}
+
+      {/* Floating Global Widgets */}
+      <WhatsAppWidget />
     </div>
   );
 }

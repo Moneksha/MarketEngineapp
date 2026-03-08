@@ -83,6 +83,21 @@ class EMA9CrossoverOptionSelling(BaseStrategy):
         prev = completed.iloc[-2]   # one bar older
         cur  = completed.iloc[-1]   # last fully closed bar
 
+        # ── Stale bar guard: if the latest completed bar is from yesterday,
+        #    skip entirely — don't emit signals or locks from historical data.
+        import pytz
+        today = __import__('datetime').datetime.now(pytz.timezone('Asia/Kolkata')).date()
+        try:
+            cur_date = cur['date']
+            if hasattr(cur_date, 'date'):
+                bar_date = cur_date.date()
+            else:
+                bar_date = __import__('datetime').datetime.fromisoformat(str(cur_date)).date()
+            if bar_date < today:
+                return None
+        except Exception:
+            pass
+
         prev_close = float(prev["close"])
         prev_ema   = float(prev["ema9"])
         cur_close  = float(cur["close"])

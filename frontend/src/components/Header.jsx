@@ -24,12 +24,30 @@ const Header = ({ isConnected }) => {
 
     const handleLogin = async () => {
         try {
-            const { data } = await marketApi.getLoginUrl();
-            if (data.login_url) {
-                window.location.href = data.login_url;
-            }
+            setLoading(true);
+            await marketApi.autoLogin();
+
+            // Start polling for auth status until it connects
+            const pollInterval = setInterval(async () => {
+                const { data } = await marketApi.authStatus();
+                if (data.connected) {
+                    setAuthStatus(true);
+                    setLoading(false);
+                    clearInterval(pollInterval);
+                    // Reload the page to refresh WS and feeds
+                    window.location.reload();
+                }
+            }, 3000);
+
+            // Stop polling after 60 seconds (script timeout limit)
+            setTimeout(() => {
+                clearInterval(pollInterval);
+                setLoading(false);
+            }, 60000);
+
         } catch (e) {
-            console.error("Login failed", e);
+            console.error("Auto login failed", e);
+            setLoading(false);
         }
     };
 

@@ -33,6 +33,7 @@ class EMA921CreditSpread(BaseStrategy):
     target_logic    = ""
     fund_required   = 200_000.0  # margin for one NIFTY credit spread
     lot_size        = 75          # current NIFTY lot size
+    is_positional   = True        # Allow carry-forward overnight
 
     EMA_FAST  = 9
     EMA_SLOW  = 21
@@ -81,6 +82,20 @@ class EMA921CreditSpread(BaseStrategy):
 
         cur  = completed.iloc[-1]
         prev = completed.iloc[-2]
+
+        # ── Stale bar guard: skip any signal from a previous trading day ──────
+        import pytz
+        today = __import__('datetime').datetime.now(pytz.timezone('Asia/Kolkata')).date()
+        try:
+            cur_date = cur['date']
+            if hasattr(cur_date, 'date'):
+                bar_date = cur_date.date()
+            else:
+                bar_date = __import__('datetime').datetime.fromisoformat(str(cur_date)).date()
+            if bar_date < today:
+                return None
+        except Exception:
+            pass
 
         p9, p21 = float(prev["ema9"]), float(prev["ema21"])
         c9, c21 = float(cur["ema9"]),  float(cur["ema21"])

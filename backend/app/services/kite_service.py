@@ -661,9 +661,23 @@ class KiteService:
             return []
 
     async def get_nifty_candles(self, interval: str = "5minute", days: int = 5) -> List[Dict]:
-        """Get NIFTY historical candles for strategy computation."""
-        to_dt = datetime.now()
-        from_dt = to_dt - timedelta(days=days)
+        """Get NIFTY historical candles for strategy computation.
+
+        For 1-minute interval (intraday strategies), fetches from today 9:00 AM IST
+        so today's completed candles are always present in the returned data.
+        For other intervals, fetches from (now - days).
+        """
+        import pytz
+        ist = pytz.timezone("Asia/Kolkata")
+        now_ist = datetime.now(ist)
+        to_dt = now_ist
+
+        if interval == "minute":
+            # Always start from this morning so today's intraday candles are included
+            from_dt = ist.localize(datetime(now_ist.year, now_ist.month, now_ist.day, 9, 0, 0))
+        else:
+            from_dt = now_ist - timedelta(days=days)
+
         return await self.get_historical(
             INSTRUMENT_TOKENS["NIFTY 50"], from_dt, to_dt, interval
         )
@@ -675,11 +689,7 @@ class KiteService:
             
         loop = asyncio.get_event_loop()
         kite = self._get_kite()
-        try:
-            return await loop.run_in_executor(None, kite.profile)
-        except Exception as e:
-            logger.error(f"Profile fetch failed: {e}")
-            return {}
+        return await loop.run_in_executor(None, kite.profile)
 
 
 # Singleton instance

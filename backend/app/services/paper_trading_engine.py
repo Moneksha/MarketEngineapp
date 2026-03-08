@@ -18,12 +18,54 @@ _active_trades: Dict[str, Dict] = {}
 
 
 async def load_active_trades(db: AsyncSession):
-    """Restore active trades from DB on startup."""
+    """Restore active trades from DB on startup.
+    
+    Trades that were ACTIVE on a previous calendar day are stale — the market
+    closed and never squared them off (e.g. backend was down at EOD).
+    We close those immediately with status='EOD' and do NOT load them into
+    the in-memory dict, so today starts clean.
+    """
+    from datetime import date
+    today = date.today()
+
     result = await db.execute(
         select(Trade).where(Trade.status == "ACTIVE")
     )
     trades = result.scalars().all()
+
+    restored = 0
+    stale_closed = 0
+    from app.strategies.registry import get_registry
+    registry = get_registry()
+
     for t in trades:
+        trade_date = t.entry_time.date() if t.entry_time else None
+        
+        # Determine if the strategy was marked positional
+        strat = registry.get(t.strategy_id)
+        is_positional = strat.is_positional if strat else False
+
+        # If the trade is from a previous day and NOT positional, it's stale — close it in DB
+        if trade_date and trade_date < today and not is_positional:
+            stmt = (
+                update(Trade)
+                .where(Trade.id == t.id)
+                .values(
+                    status="EOD",
+                    exit_price=t.entry_price,   # best we can do without live price
+                    exit_time=datetime.now(),
+                    pnl=0.0,
+                )
+            )
+            await db.execute(stmt)
+            stale_closed += 1
+            logger.warning(
+                f"[startup] Closed stale trade id={t.id} strategy={t.strategy_id} "
+                f"from {trade_date} (market was closed when backend restarted)"
+            )
+            continue
+
+        # Today's trade — restore to memory
         _active_trades[t.strategy_id] = {
             "id": t.id,
             "strategy_id": t.strategy_id,
@@ -38,12 +80,17 @@ async def load_active_trades(db: AsyncSession):
             "signal_data": t.signal_data,
             "unrealized_pnl": 0.0,
         }
-    logger.info(f"Restored {len(_active_trades)} active trades from DB")
+        restored += 1
+
+    await db.commit()
+    logger.info(f"[startup] Restored {restored} active trades | Closed {stale_closed} stale trades from previous days")
 
 
 
 def is_market_open() -> bool:
-    now = datetime.now().time()
+    import pytz
+    ist = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(ist).time()
     open_h, open_m = map(int, settings.market_open.split(":"))
     close_h, close_m = map(int, settings.market_close.split(":"))
     market_open = time(open_h, open_m)
@@ -52,7 +99,9 @@ def is_market_open() -> bool:
 
 
 def is_eod_squareoff_time() -> bool:
-    now = datetime.now().time()
+    import pytz
+    ist = pytz.timezone("Asia/Kolkata")
+    now = datetime.now(ist).time()
     sq_h, sq_m = map(int, settings.eod_square_off.split(":"))
     eod_time = time(sq_h, sq_m)
     return now >= eod_time
@@ -135,9 +184,14 @@ async def tick_check(db: AsyncSession, strategy_id: str, current_price: float) -
         unrealized = (entry - current_price) * qty
     _active_trades[strategy_id]["unrealized_pnl"] = round(unrealized, 2)
 
-    # EOD square-off
+    from app.strategies.registry import get_registry
+    registry = get_registry()
+    strat = registry.get(strategy_id)
+    is_positional = strat.is_positional if strat else False
+
+    # EOD square-off (only for intraday trades)
     exit_reason = None
-    if is_eod_squareoff_time():
+    if is_eod_squareoff_time() and not is_positional:
         exit_reason = "EOD"
     elif direction == "BUY":
         if sl and current_price <= sl:
@@ -250,8 +304,16 @@ def get_all_active_trades() -> Dict[str, Dict]:
 
 
 async def square_off_all(db: AsyncSession, current_prices: Dict[str, float]):
-    """Force close all active trades at EOD."""
+    """Force close all active INTRADAY trades at EOD."""
+    from app.strategies.registry import get_registry
+    registry = get_registry()
+    
     for strategy_id in list(_active_trades.keys()):
-        nifty_price = current_prices.get("NIFTY 50", 0)
-        if nifty_price:
-            await tick_check(db, strategy_id, nifty_price)
+        strat = registry.get(strategy_id)
+        is_positional = strat.is_positional if strat else False
+        
+        # Only square off intraday trades
+        if not is_positional:
+            nifty_price = current_prices.get("NIFTY 50", 0)
+            if nifty_price:
+                await tick_check(db, strategy_id, nifty_price)

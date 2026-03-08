@@ -14,6 +14,7 @@ export const marketApi = {
     getOHLC: (symbol, interval = '5minute', days = 5) =>
         api.get(`/market/ohlc/${symbol}`, { params: { interval, days } }),
     authStatus: () => api.get('/market/auth/zerodha/status'),
+    autoLogin: () => api.post('/market/auth/zerodha/auto-login'),
     getLoginUrl: () => api.post('/market/auth/zerodha/login'),
 };
 

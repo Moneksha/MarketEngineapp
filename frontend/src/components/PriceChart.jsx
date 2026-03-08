@@ -7,13 +7,19 @@ const intervals = ['3minute', '5minute', '15minute', '30minute'];
 
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
+        const closeP = payload.find((p) => p.dataKey === 'close');
+        const highP = payload.find((p) => p.dataKey === 'high');
+        const lowP = payload.find((p) => p.dataKey === 'low');
+
         return (
             <div className="glass-panel p-3 border border-primary/20 shadow-2xl">
                 <p className="text-muted text-xs mb-2 font-mono">{label}</p>
                 <div className="space-y-1">
-                    <p className="text-white font-mono text-sm"><span className="text-muted mr-2">Close:</span> ₹{payload[0].value.toLocaleString('en-IN')}</p>
-                    {payload[1] && <p className="text-primary/80 font-mono text-xs"><span className="text-muted mr-2">High:</span>  ₹{payload[1].value.toLocaleString('en-IN')}</p>}
-                    {payload[2] && <p className="text-danger/80 font-mono text-xs"><span className="text-muted mr-2">Low:</span>   ₹{payload[2].value.toLocaleString('en-IN')}</p>}
+                    {closeP && <p className="text-white font-mono text-sm"><span className="text-muted mr-2">Close:</span> ₹{closeP.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                    {highP && <p className="text-primary/80 font-mono text-xs"><span className="text-muted mr-2">High:</span>  ₹{highP.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                    {lowP && <p className="text-danger/80 font-mono text-xs"><span className="text-muted mr-2">Low:</span>   ₹{lowP.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                    {payload.find((p) => p.dataKey === 'ema_9') && <p className="text-[#3b82f6]/80 font-mono text-xs"><span className="text-muted mr-2">EMA 9:</span>  ₹{payload.find((p) => p.dataKey === 'ema_9').value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
+                    {payload.find((p) => p.dataKey === 'ema_21') && <p className="text-[#f59e0b]/80 font-mono text-xs"><span className="text-muted mr-2">EMA 21:</span>  ₹{payload.find((p) => p.dataKey === 'ema_21').value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                 </div>
             </div>
         );
@@ -34,7 +40,8 @@ const PriceChart = () => {
     const fetchOHLC = async () => {
         setLoading(true);
         try {
-            const { data: res } = await marketApi.getOHLC('NIFTY 50', interval, 5);
+            // Backend now returns only the most recent trading day's candles
+            const { data: res } = await marketApi.getOHLC('NIFTY 50', interval, 1);
             if (res.candles) {
                 const formatted = res.candles.map((c) => ({
                     time: new Date(c.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
@@ -43,11 +50,15 @@ const PriceChart = () => {
                     low: c.low,
                     close: c.close,
                     volume: c.volume,
-                })).slice(-60);
+                    ema_9: c.ema_9,
+                    ema_21: c.ema_21,
+                }));
                 setData(formatted);
             }
         } catch (e) {
-            console.error(e);
+            console.error('Failed to fetch OHLC for PriceChart:', e);
+            // Don't crash the UI if the backend returns 401/500
+            setData([]);
         } finally {
             setLoading(false);
         }
@@ -128,12 +139,12 @@ const PriceChart = () => {
                                     <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1, strokeDasharray: '4 4' }} />
 
                                     {/* High/Low bounds (subtle) */}
-                                    <Area type="monotone" dataKey="high" stroke="#05E07D" strokeWidth={1} strokeDasharray="2 2" fill="none" opacity={0.3} />
-                                    <Area type="monotone" dataKey="low" stroke="#FF334B" strokeWidth={1} strokeDasharray="2 2" fill="none" opacity={0.3} />
+                                    <Area type="linear" dataKey="high" stroke="#05E07D" strokeWidth={1} strokeDasharray="2 2" fill="none" opacity={0.3} />
+                                    <Area type="linear" dataKey="low" stroke="#FF334B" strokeWidth={1} strokeDasharray="2 2" fill="none" opacity={0.3} />
 
                                     {/* Main Price Line with Gradient Fill */}
                                     <Area
-                                        type="monotone"
+                                        type="linear"
                                         dataKey="close"
                                         stroke="#05E07D"
                                         strokeWidth={3}
@@ -141,6 +152,10 @@ const PriceChart = () => {
                                         fill="url(#colorClose)"
                                         activeDot={{ r: 6, fill: '#05E07D', stroke: '#131826', strokeWidth: 2 }}
                                     />
+
+                                    {/* EMAs (Subtle) */}
+                                    <Area type="linear" dataKey="ema_9" stroke="#3b82f6" strokeWidth={1} fill="none" opacity={0.6} />
+                                    <Area type="linear" dataKey="ema_21" stroke="#f59e0b" strokeWidth={1} fill="none" opacity={0.6} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>

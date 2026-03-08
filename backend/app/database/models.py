@@ -110,3 +110,50 @@ class BacktestResult(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     strategy = relationship("Strategy", back_populates="backtest_results")
+
+
+class NiftyCandle(Base):
+    """
+    Persistent OHLCV candle store for NIFTY.
+    One row per (symbol, interval, timestamp) — unique constraint ensures idempotent upserts.
+    Primary use: historical indicator calculation (EMA, ATR, etc.) without re-fetching from Kite.
+    """
+    __tablename__ = "nifty_candles"
+
+    id        = Column(Integer, primary_key=True, autoincrement=True)
+    symbol    = Column(String(20), nullable=False, default="NIFTY 50", index=True)
+    interval  = Column(String(10), nullable=False, default="1minute", index=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+    open      = Column(Numeric(12, 2), nullable=False)
+    high      = Column(Numeric(12, 2), nullable=False)
+    low       = Column(Numeric(12, 2), nullable=False)
+    close     = Column(Numeric(12, 2), nullable=False)
+    volume    = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "interval", "timestamp", name="uq_nifty_candle"),
+    )
+
+
+class EquityPrice(Base):
+    """
+    Unified equity OHLCV store for the backtest engine.
+    One row per (symbol, datetime) at 1-minute resolution.
+    Higher timeframes are resampled in-memory by the engine.
+    """
+    __tablename__ = "equity_prices"
+
+    id       = Column(Integer, primary_key=True, autoincrement=True)
+    symbol   = Column(String(50), nullable=False, index=True)
+    datetime = Column(DateTime, nullable=False, index=True)
+    open     = Column(Numeric(12, 2))
+    high     = Column(Numeric(12, 2))
+    low      = Column(Numeric(12, 2))
+    close    = Column(Numeric(12, 2))
+    volume   = Column(Integer, default=0)
+
+    __table_args__ = (
+        UniqueConstraint("symbol", "datetime", name="uq_equity_price"),
+    )
+

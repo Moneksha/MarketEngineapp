@@ -38,8 +38,15 @@ const StrategyDetail = ({ strategyId, strategies, onBack }) => {
                     <h2 className="text-xl font-bold">{strategy.name}</h2>
                     <p className="text-sm text-muted mt-1">{strategy.description}</p>
                 </div>
-                <div className="px-3 py-1 bg-surface/50 rounded text-xs text-muted font-mono">
-                    {strategy.timeframe}
+                <div className="flex gap-2">
+                    {strategy.is_positional && (
+                        <div className="px-3 py-1 bg-warning/20 border border-warning/50 rounded text-xs text-warning font-semibold tracking-wider uppercase">
+                            Positional
+                        </div>
+                    )}
+                    <div className="px-3 py-1 bg-surface/80 rounded text-xs text-muted font-mono tracking-wide">
+                        {strategy.timeframe}
+                    </div>
                 </div>
             </div>
 

@@ -46,7 +46,12 @@ const StrategySelector = ({ strategies, activeId, onSelect, onToggle, pnlMap }) 
                                 </div>
                                 <div>
                                     <h4 className="font-bold text-base text-white">{s.name}</h4>
-                                    <span className="text-xs text-muted mt-0.5 block font-mono bg-white/5 px-2 py-0.5 rounded w-fit border border-border">{s.timeframe}</span>
+                                    <div className="flex gap-2 mt-1">
+                                        {s.is_positional && (
+                                            <span className="text-[10px] text-warning font-semibold tracking-wider uppercase bg-warning/10 border border-warning/30 px-1.5 py-0.5 rounded">Positional</span>
+                                        )}
+                                        <span className="text-xs text-muted font-mono bg-white/5 px-2 py-0.5 rounded border border-border">{s.timeframe}</span>
+                                    </div>
                                 </div>
                             </div>
 
