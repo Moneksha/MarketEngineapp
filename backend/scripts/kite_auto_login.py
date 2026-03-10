@@ -16,7 +16,7 @@ PASSWORD = os.getenv("KITE_PASSWORD", "")
 TOTP_SECRET = os.getenv("KITE_TOTP_SECRET", "")
 API_KEY = os.getenv("KITE_API_KEY", "")
 
-BACKEND_URL = "http://localhost/api/market/auth/callback"
+BACKEND_URL = os.getenv("BACKEND_CALLBACK_URL", "https://marketengine.in/api/market/auth/zerodha/callback")
 
 
 async def auto_login():
@@ -83,9 +83,9 @@ async def auto_login():
                 
                 # Send the token directly to our running backend
                 logger.info("Sending token to backend...")
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(follow_redirects=True) as client:
                     resp = await client.get(f"{BACKEND_URL}?request_token={request_token}")
-                    if resp.status_code == 200:
+                    if resp.status_code in (200, 302):
                         logger.info("✅ Backend updated successfully! Live data should now flow.")
                     else:
                         logger.error(f"Failed to update backend. Status: {resp.status_code}, Response: {resp.text}")
