@@ -80,3 +80,47 @@ async def send_strategy_request_email(
     except Exception as e:
         logger.error(f"Email send failed: {e}")
         return False
+
+async def send_password_reset_email(email: str, otp: str) -> bool:
+    """
+    Send a 6-digit OTP to the user for password reset.
+    Returns True on success, False on failure.
+    """
+    if not settings.smtp_user or settings.smtp_user == "your_gmail@gmail.com":
+        logger.warning("SMTP not configured — skipping password reset email send")
+        return False
+
+    subject = "Market Engine Password Reset OTP"
+    html_body = f"""
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;
+                background:#0a0e1a;color:#e2e8f0;padding:32px;border-radius:12px;
+                border:1px solid #1e293b;">
+      <h2 style="color:#00d4ff;margin-top:0;">Password Reset</h2>
+      <p style="color:#94a3b8;font-size:16px;">
+        Your OTP for resetting your password is:
+      </p>
+      <div style="background:#1e293b;color:#e2e8f0;font-size:32px;font-weight:bold;
+                  letter-spacing:8px;padding:24px;text-align:center;border-radius:8px;
+                  margin:24px 0;">
+        {otp}
+      </div>
+      <p style="color:#94a3b8;font-size:14px;">
+        This OTP expires in 5 minutes. If you did not request a password reset, please ignore this email.
+      </p>
+      <hr style="border-color:#1e293b;margin:24px 0;"/>
+      <p style="font-size:12px;color:#475569;margin:0;">
+        Sent from Market Engine Security
+      </p>
+    </div>
+    """
+
+    try:
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, _send_smtp, subject, html_body, email
+        )
+        logger.info(f"Password reset OTP sent → {email}")
+        return True
+    except Exception as e:
+        logger.error(f"Password reset email send failed: {e}")
+        return False

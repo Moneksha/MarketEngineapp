@@ -4,10 +4,38 @@ from sqlalchemy import (
     Column, Integer, String, Numeric, Boolean, DateTime,
     ForeignKey, Text, JSON, Date, UniqueConstraint
 )
+import uuid
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database.base import Base
 
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(150), nullable=False)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    phone_number = Column(String(20), unique=True, nullable=True, index=True)
+    password_hash = Column(String(255), nullable=True)   # nullable for Google-only users
+    google_id = Column(String(100), unique=True, nullable=True, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_login = Column(DateTime(timezone=True), nullable=True)
+
+    password_resets = relationship("PasswordReset", back_populates="user", cascade="all, delete-orphan")
+
+class PasswordReset(Base):
+    __tablename__ = "password_resets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    otp_hash = Column(String(255), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    attempts = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User", back_populates="password_resets")
 
 class Instrument(Base):
     __tablename__ = "instruments"
