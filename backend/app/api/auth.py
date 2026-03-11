@@ -10,6 +10,7 @@ import os
 import httpx
 import random
 from jose import jwt
+from loguru import logger
 
 from app.database.base import get_db
 from app.database.models import User, PasswordReset
@@ -125,19 +126,23 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     # Determine lookup strategy
     if "@" in identifier:
-        condition = User.email == identifier
+        logger.info(f"Login lookup for email: {identifier.lower()}")
+        condition = User.email == identifier.lower()
     else:
         # Auto-format 10 digit Indian phones to +91XXXXXXXXXX
         sanitized_phone = _sanitize_phone(identifier)
+        logger.info(f"Login lookup for phone: {sanitized_phone}")
         condition = User.phone_number == sanitized_phone
 
     result = await db.execute(select(User).where(condition))
     user = result.scalars().first()
 
     if not user or not user.password_hash:
+        logger.warning(f"Login failed: User not found or no password hash for '{identifier}'")
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     if not verify_password(credentials.password, user.password_hash):
+        logger.warning(f"Login failed: Invalid password for '{identifier}'")
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     user.last_login = datetime.utcnow()
@@ -254,15 +259,18 @@ async def google_callback(code: str = None, error: str = None, db: AsyncSession 
 async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
     identifier = req.identifier.strip()
     if "@" in identifier:
-        condition = User.email == identifier
+        logger.info(f"Forgot password lookup for email: {identifier.lower()}")
+        condition = User.email == identifier.lower()
     else:
         sanitized_phone = _sanitize_phone(identifier)
+        logger.info(f"Forgot password lookup for phone: {sanitized_phone}")
         condition = User.phone_number == sanitized_phone
 
     result = await db.execute(select(User).where(condition))
     user = result.scalars().first()
 
     if not user:
+        logger.warning(f"Forgot password failed: User not found for '{identifier}'")
         raise HTTPException(status_code=404, detail="User not found.")
 
     if not user.email:
