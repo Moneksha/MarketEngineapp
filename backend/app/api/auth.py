@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import select, or_, update
+from sqlalchemy import select, or_, update, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi.responses import RedirectResponse
 import uuid
@@ -127,7 +127,7 @@ async def login(credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
     # Determine lookup strategy
     if "@" in identifier:
         logger.info(f"Login lookup for email: {identifier.lower()}")
-        condition = User.email == identifier.lower()
+        condition = func.lower(User.email) == identifier.lower()
     else:
         # Auto-format 10 digit Indian phones to +91XXXXXXXXXX
         sanitized_phone = _sanitize_phone(identifier)
@@ -260,7 +260,7 @@ async def forgot_password(req: ForgotPasswordRequest, db: AsyncSession = Depends
     identifier = req.identifier.strip()
     if "@" in identifier:
         logger.info(f"Forgot password lookup for email: {identifier.lower()}")
-        condition = User.email == identifier.lower()
+        condition = func.lower(User.email) == identifier.lower()
     else:
         sanitized_phone = _sanitize_phone(identifier)
         logger.info(f"Forgot password lookup for phone: {sanitized_phone}")
