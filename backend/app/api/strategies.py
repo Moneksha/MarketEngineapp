@@ -14,7 +14,8 @@ from typing import Optional
 from loguru import logger
 
 from app.database.base import get_db
-from app.database.models import Strategy, BacktestResult
+from app.database.models import Strategy, BacktestResult, User
+from app.api.deps import get_current_user
 from app.strategies.registry import get_registry, get_strategy, list_strategies
 from app.services.kite_service import kite_service, INSTRUMENT_TOKENS
 from app.utils.indicators import candles_to_dataframe
@@ -22,7 +23,11 @@ from app.services import paper_trading_engine as pta
 from app.services.pnl_engine import compute_live_pnl, get_equity_curve, get_todays_trades
 from app.utils.email_sender import send_strategy_request_email
 
-router = APIRouter(prefix="/api/strategies", tags=["strategies"])
+router = APIRouter(
+    prefix="/api/strategies", 
+    tags=["strategies"],
+    dependencies=[Depends(get_current_user)]
+)
 
 
 class StrategyRequest(BaseModel):

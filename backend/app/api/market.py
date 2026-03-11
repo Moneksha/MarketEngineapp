@@ -9,15 +9,16 @@ GET /api/market/auth/zerodha/callback — handles redirect from Zerodha
 GET /api/market/auth/zerodha/status — returns connection status
 """
 import asyncio
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel
 from typing import Optional
 from loguru import logger
 from fastapi.responses import RedirectResponse
 from app.config.settings import settings
-
 from app.services.kite_service import kite_service, INSTRUMENT_TOKENS
 from app.services.market_bias import compute_market_bias
+from app.database.models import User
+from app.api.deps import get_current_user
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
@@ -150,7 +151,7 @@ async def secure_auth_status():
 
 
 @router.get("/nifty")
-async def get_nifty():
+async def get_nifty(current_user: User = Depends(get_current_user)):
     if not kite_service.is_authenticated():
         raise HTTPException(status_code=401, detail="Not authenticated with Zerodha")
     try:
@@ -181,7 +182,7 @@ async def get_nifty():
 
 
 @router.get("/heavyweights")
-async def get_heavyweights():
+async def get_heavyweights(current_user: User = Depends(get_current_user)):
     if not kite_service.is_authenticated():
         raise HTTPException(status_code=401, detail="Not authenticated with Zerodha")
     try:
@@ -192,7 +193,7 @@ async def get_heavyweights():
 
 
 @router.get("/bias")
-async def get_market_bias():
+async def get_market_bias(current_user: User = Depends(get_current_user)):
     if not kite_service.is_authenticated():
         raise HTTPException(status_code=401, detail="Not authenticated with Zerodha")
     try:
@@ -210,6 +211,7 @@ async def get_ohlc(
     symbol: str,
     interval: str = Query("5minute"),
     days: int = Query(1),
+    current_user: User = Depends(get_current_user)
 ):
     if not kite_service.is_authenticated():
         raise HTTPException(status_code=401, detail="Not authenticated with Zerodha")
@@ -249,8 +251,10 @@ async def get_ohlc(
     # Convert DB models to dict structure expected by prepare_chart_data
     candles_1m = []
     for c in db_candles:
+        # DB returns UTC-aware datetime. Convert to IST naive for indicator processing.
+        t_ist = c.timestamp.astimezone(ist).replace(tzinfo=None) if c.timestamp.tzinfo else c.timestamp
         candles_1m.append({
-            "date": c.timestamp,
+            "date": t_ist,
             "open": float(c.open),
             "high": float(c.high),
             "low": float(c.low),

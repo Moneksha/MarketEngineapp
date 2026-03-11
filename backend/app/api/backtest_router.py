@@ -6,10 +6,17 @@ FastAPI router exposing backtest endpoints for the Equity Research Dashboard.
 
 import re
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
+from app.database.models import Strategy, Trade, BacktestResult, NiftyCandle, User
+from app.api.deps import get_current_user
+from app.strategies.registry import get_strategy
 from app.services.backtest_engine import run_backtest, get_available_symbols
 
-router = APIRouter(prefix="/api/research", tags=["equity-research"])
+router = APIRouter(
+    prefix="/api/research",
+    tags=["equity-research"],
+    dependencies=[Depends(get_current_user)]
+)
 
 # ── Timeframe-based max backtest range (years).  None = unlimited ──────────
 TIMEFRAME_MAX_YEARS = {

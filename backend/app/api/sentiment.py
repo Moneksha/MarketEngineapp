@@ -2,11 +2,16 @@
 Sentiment API — GET /api/sentiment
 Returns composite market sentiment score + per-factor breakdown.
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from loguru import logger
 from app.services.sentiment_service import compute_sentiment
+from app.api.deps import get_current_user
 
-router = APIRouter(prefix="/api/sentiment", tags=["sentiment"])
+router = APIRouter(
+    prefix="/api/sentiment", 
+    tags=["sentiment"],
+    dependencies=[Depends(get_current_user)]
+)
 
 
 @router.get("")

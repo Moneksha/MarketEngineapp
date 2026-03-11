@@ -12,12 +12,21 @@ from typing import Optional
 from datetime import date, datetime
 
 from app.database.base import get_db
-from app.database.models import Trade, PnLSnapshot
+from app.database.models import Trade, PnLSnapshot, User
+from app.api.deps import get_current_user
 from app.services.pnl_engine import get_equity_curve, compute_live_pnl
 from app.services.kite_service import kite_service
 
-trades_router = APIRouter(prefix="/api/trades", tags=["trades"])
-pnl_router = APIRouter(prefix="/api/pnl", tags=["pnl"])
+trades_router = APIRouter(
+    prefix="/api/trades", 
+    tags=["trades"],
+    dependencies=[Depends(get_current_user)]
+)
+pnl_router = APIRouter(
+    prefix="/api/pnl", 
+    tags=["pnl"],
+    dependencies=[Depends(get_current_user)]
+)
 
 
 @trades_router.get("")

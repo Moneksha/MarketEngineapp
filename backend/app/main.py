@@ -20,6 +20,7 @@ from app.api.market import router as market_router
 from app.api.strategies import router as strategy_router
 from app.api.trades import trades_router, pnl_router
 from app.api.sentiment import router as sentiment_router
+from app.api.auth import router as auth_router
 from app.api.backtest_router import router as backtest_router
 from app.websocket.market_ws import websocket_endpoint, broadcast_task
 from app.services.strategy_runner import run_strategy_cycle
@@ -268,6 +269,7 @@ app.add_middleware(
 )
 
 # Routers
+app.include_router(auth_router)
 app.include_router(market_router)
 app.include_router(strategy_router)
 app.include_router(trades_router)

@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     # App
     app_env: str = Field(default="development", env="APP_ENV")
     app_port: int = Field(default=8000, env="APP_PORT")
+    secret_key: str = Field(
+        default="b404dcd761bebf462bd89e7019f18aeb582f1edfa387ea314fba37bed09a1ebd", 
+        env="SECRET_KEY"
+    )
     log_level: str = Field(default="INFO", env="LOG_LEVEL")
     frontend_url: str = Field(default="http://localhost:5173", env="FRONTEND_URL")
     mock_mode: bool = Field(default=False, env="MOCK_MODE")
@@ -33,6 +37,11 @@ class Settings(BaseSettings):
     smtp_user: str = Field(default="", env="SMTP_USER")
     smtp_password: str = Field(default="", env="SMTP_PASSWORD")
     notify_email: str = Field(default="dmoneksh@yahoo.com", env="NOTIFY_EMAIL")
+
+    # Google OAuth
+    google_client_id: str = Field(default="", env="GOOGLE_CLIENT_ID")
+    google_client_secret: str = Field(default="", env="GOOGLE_CLIENT_SECRET")
+    google_redirect_uri: str = Field(default="", env="GOOGLE_REDIRECT_URI")
 
     class Config:
         env_file = ".env"
