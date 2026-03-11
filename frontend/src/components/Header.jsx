@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, WifiOff } from 'lucide-react';
+import { Wifi, WifiOff, LogOut } from 'lucide-react';
 import { marketApi } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import logo from '../assets/logo.svg';
 
 const Header = ({ isConnected }) => {
+    const { user, logout } = useAuth();
     const [authStatus, setAuthStatus] = useState(false);
     const [loading, setLoading] = useState(true);
 
@@ -88,6 +90,23 @@ const Header = ({ isConnected }) => {
                         </button>
                     )}
                 </div>
+
+                {/* User Session Info */}
+                {user && (
+                    <div className="flex items-center gap-4 border-l border-border pl-6">
+                        <div className="flex flex-col items-end">
+                            <span className="text-sm font-semibold text-text">{user.name}</span>
+                            <span className="text-xs text-muted">{user.email}</span>
+                        </div>
+                        <button
+                            onClick={logout}
+                            className="p-2 hover:bg-red-500/10 text-muted hover:text-red-500 rounded-lg transition-colors"
+                            title="Logout"
+                        >
+                            <LogOut className="w-5 h-5" />
+                        </button>
+                    </div>
+                )}
             </div>
         </header>
     );

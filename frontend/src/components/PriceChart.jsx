@@ -18,8 +18,6 @@ const CustomTooltip = ({ active, payload, label }) => {
                     {closeP && <p className="text-white font-mono text-sm"><span className="text-muted mr-2">Close:</span> ₹{closeP.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                     {highP && <p className="text-primary/80 font-mono text-xs"><span className="text-muted mr-2">High:</span>  ₹{highP.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                     {lowP && <p className="text-danger/80 font-mono text-xs"><span className="text-muted mr-2">Low:</span>   ₹{lowP.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
-                    {payload.find((p) => p.dataKey === 'ema_9') && <p className="text-[#3b82f6]/80 font-mono text-xs"><span className="text-muted mr-2">EMA 9:</span>  ₹{payload.find((p) => p.dataKey === 'ema_9').value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
-                    {payload.find((p) => p.dataKey === 'ema_21') && <p className="text-[#f59e0b]/80 font-mono text-xs"><span className="text-muted mr-2">EMA 21:</span>  ₹{payload.find((p) => p.dataKey === 'ema_21').value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>}
                 </div>
             </div>
         );
@@ -152,10 +150,6 @@ const PriceChart = () => {
                                         fill="url(#colorClose)"
                                         activeDot={{ r: 6, fill: '#05E07D', stroke: '#131826', strokeWidth: 2 }}
                                     />
-
-                                    {/* EMAs (Subtle) */}
-                                    <Area type="linear" dataKey="ema_9" stroke="#3b82f6" strokeWidth={1} fill="none" opacity={0.6} />
-                                    <Area type="linear" dataKey="ema_21" stroke="#f59e0b" strokeWidth={1} fill="none" opacity={0.6} />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </div>
