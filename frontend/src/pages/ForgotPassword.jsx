@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
+import api from '../services/api';
 import logo from '../assets/logo.svg';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const ForgotPassword = () => {
     const [step, setStep] = useState(1);
@@ -24,7 +22,7 @@ const ForgotPassword = () => {
         setSuccessMessage('');
         setLoading(true);
         try {
-            const res = await axios.post(`${API_URL}/api/auth/forgot-password`, { identifier });
+            const res = await api.post('/auth/forgot-password', { identifier });
             setSuccessMessage(res.data.detail || 'OTP sent to your email.');
             setStep(2);
         } catch (err) {
@@ -40,7 +38,7 @@ const ForgotPassword = () => {
         setSuccessMessage('');
         setLoading(true);
         try {
-            const res = await axios.post(`${API_URL}/api/auth/verify-reset-otp`, { identifier, otp });
+            const res = await api.post('/auth/verify-reset-otp', { identifier, otp });
             setResetToken(res.data.reset_token);
             setSuccessMessage('OTP Verified successfully.');
             setStep(3);
@@ -65,7 +63,7 @@ const ForgotPassword = () => {
 
         setLoading(true);
         try {
-            await axios.post(`${API_URL}/api/auth/reset-password`, {
+            await api.post('/auth/reset-password', {
                 reset_token: resetToken,
                 new_password: newPassword,
                 confirm_password: confirmPassword
