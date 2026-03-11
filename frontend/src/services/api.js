@@ -22,15 +22,25 @@ api.interceptors.response.use(
             const detail = error.response?.data?.detail || '';
             const wwwAuth = error.response?.headers?.['www-authenticate'] || '';
 
-            // Only clear session for JWT token failures.
-            // FastAPI's OAuth2PasswordBearer adds 'WWW-Authenticate: Bearer'
-            // on JWT auth failures. Zerodha 401s ("Not authenticated with Zerodha")
-            // do NOT have this header — so we leave the session intact for those.
-            const isJwtFailure = wwwAuth.toLowerCase().includes('bearer') ||
+            // ONLY wipe token for real JWT authentication failures.
+            // Zerodha-specific 401s ("Not authenticated with Zerodha") must NOT
+            // log out the user — they just mean Kite is disconnected, not that
+            // the user's app session is invalid.
+            // A true JWT failure has the 'Bearer' WWW-Authenticate header set by FastAPI's
+            // OAuth2PasswordBearer dependency, or an explicit credential validation error.
+            const isZerodhaSideError = detail.toLowerCase().includes('zerodha') ||
+                detail.toLowerCase().includes('not authenticated with') ||
+                detail.toLowerCase().includes('kite') ||
+                detail.toLowerCase().includes('not authenticated');
+
+            const isJwtFailure = !isZerodhaSideError && (
                 detail === 'Could not validate credentials' ||
-                detail === 'Token has expired';
+                detail === 'Token has expired' ||
+                (wwwAuth.toLowerCase().includes('bearer') && detail !== 'Not authenticated with Zerodha')
+            );
 
             if (isJwtFailure) {
+                console.warn('[API] JWT token invalid/expired, clearing session.');
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
                 if (window.location.pathname !== '/login') {
